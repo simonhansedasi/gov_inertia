@@ -4,30 +4,30 @@ from tqdm import tqdm
 initial_conditions = {
     'N':1000,
     'm':0.01,
-    'k':30,
+    'k':50,
     'G':1,
-    'H_0':3,
+    'H_0':1,
     'H':0,
-    'rho':2.3,
-    'theta':5.3,
-    'F':0.02,
-    'alpha':1e-1,
-    'beta':1e-1,
-    'gamma':1e-1,
-    'delta':5,
+    'rho':1.5,
+    'theta':3.5,
+    'F':0.1,
+    'alpha':0.5,
+    'beta':0.5,
+    'gamma':0.5,
+    'delta':10,
     'mu_0':0,
     'sigma':0.1,
-    'tau':0.75,
-    'lambda':0.004,
-    'psi':0.3,
-    'epsilon':100,
-    'zeta':1e-4,
+    'tau':0.05,
+    'lambda':0.001,
+    'psi':0.5,
+    'epsilon':10,
+    'zeta':1e-3,
     'eta':0.7,
     'C_B':3,
-    'omega':0.85,
+    'omega':0.95,
     'stolen_funds':0,
     'savings':0,
-    'growth_rate':0.15
+    'growth_rate':0.015
 }
 
 def calculate_interactions(parameters):
@@ -79,13 +79,24 @@ def draw_population_wealth(parameters):
     mu = parameters['mu_0']
     sigma = parameters['sigma']
     N = parameters['N']
-    wealth = np.random.lognormal(mean = mu, sigma = sigma, size = round(N))
+    
+    # estimate average wealth from a lognormal
+    expected_mean = np.exp(mu + 0.5 * sigma**2)
+    # print(expected_mean)
+    base_wealth = N * expected_mean
+
+    # estimate std of wealth distribution
+    expected_std = np.sqrt(N) * expected_mean * 0.1
+    
+    
+    noise_factor = np.random.normal(loc=1.0, scale=0.05)
+    wealth = base_wealth * noise_factor
     return wealth
 
 
 def levy_tax(parameters, wealth):
     revenue = wealth * parameters['tau']
-    return sum(revenue)
+    return (revenue)
 
 
 def redistribute_wealth(parameters, surplus):
@@ -94,9 +105,13 @@ def redistribute_wealth(parameters, surplus):
     L = calculate_government_latency(parameters)
 
     scaled_surplus = np.log1p(surplus) * parameters['lambda'] * np.log(1 + B)
-    # print(scaled_surplus)
-    mu = mu_0 + scaled_surplus - (parameters['psi'] * L)
+    scaled_surplus /= (1 + mu_0)  # dampen as mu_0 rises   
+    penalty = parameters['psi'] * L
+    net_gain = scaled_surplus - penalty
+
+    mu = max(mu_0 + net_gain, mu_0)
     parameters['mu_0'] = mu
+    # print(mu)
 
 
 
@@ -117,16 +132,16 @@ def calculate_growth_potential(parameters, allocated_surplus, c_growth):
     S = allocated_surplus
     savings = parameters['savings']
     
-    DG = round(S / c_growth)
-
-    if DG < 1:
-        S = S + savings
-        DG = round(S / c_growth)
-        parameters['savings'] -= savings
+    DG = (S / c_growth)
+    # print(f'DG for this round: {DG}')
+    # if DG < 1:
+    #     S = S + savings
+    #     DG = round(S / c_growth)
+    #     parameters['savings'] -= savings
     return DG
 
 def grow_government(parameters, DG):
-    parameters['G'] += DG
+    parameters['G'] += min(DG, parameters['N'] / 2)
 
 
     
@@ -142,9 +157,9 @@ def expand_government(parameters, surplus):
 
 
 def reduce_enforcement_cost(parameters, surplus):
-    parameters['epsilon'] = max(1e-5, parameters['epsilon'] * np.exp(-0.0001 * surplus))
-    parameters['delta'] = max(1.0, parameters['delta'] - 0.0005 * np.log1p(surplus))
-    parameters['zeta'] = max(0.1, parameters['zeta'] - 0.0005 * np.log1p(surplus))
+    parameters['epsilon'] = max(1e-5, parameters['epsilon'] * np.exp(-0.001 * (surplus/3)))
+    parameters['delta'] = max(1.0, parameters['delta'] - 0.0005 * np.log1p((surplus/3)))
+    parameters['zeta'] = max(0.1, parameters['zeta'] - 0.0005 * np.log1p((surplus/3)))
     return parameters
 
 
@@ -187,15 +202,16 @@ def assign_surplus_weights(surplus, weights):
     
 
 def spend_surplus(parameters, surpluses):
-    loss_to_corruption(parameters,surpluses[0])
+    # print(f'surpluses: {surpluses}')
+    # loss_to_corruption(parameters,surpluses[0])
 
-    expand_government(parameters,surpluses[1])
+    expand_government(parameters,surpluses[0])
 
-    reduce_enforcement_cost(parameters,surpluses[2])
+    reduce_enforcement_cost(parameters,surpluses[1])
 
-    redistribute_wealth(parameters, surpluses[3])
+    redistribute_wealth(parameters, surpluses[2])
     
-    save_funds_for_later(parameters,surpluses[4])
+    save_funds_for_later(parameters,surpluses[3])
 
 
 
@@ -226,7 +242,9 @@ def initialize_government(parameters):
 def run_simulation(parameters, n_cycles):
     parameters = initialize_government(parameters)
     history = []
-    history.append(parameters)
+    snapshot = copy.deepcopy(parameters)
+    history.append(snapshot)
+    # history.append(parameters)
     for cycle in tqdm(range(n_cycles)):
     
         # calculate cost to run government for given population
@@ -235,28 +253,50 @@ def run_simulation(parameters, n_cycles):
         B = calculate_information_capacity(parameters)
         L = calculate_government_latency(parameters)
         E_C = calculate_enforcement_cost(parameters)
-    
+        # print(E_C)
         # calculate total cost
         C_E = E_C * I_E
         C_total = C_E + L
+        # print(C_total)
     
         # determine weath of population
         wealth = draw_population_wealth(parameters)
     
+    
+        # print(C_total, sum(wealth))
         # determine tax revenue to spend
         R = levy_tax(parameters, wealth)
-
-        if R < C_total:
-            print('gov failed')
-            return history
+        # print(R)
         
-        # find tax surplus
+        
+                # find tax surplus
+        # print(
+        #     f'Revenue: {R}\n'
+        #     f'Total Cost: {C_total}\n'
+        #     f'Surplus: {surplus}\n'
+        # )
+        if R < C_total:
+            # print('gov failed')
+            
+            while R < C_total:
+                # print('raising taxes')
+                parameters['tau'] += 0.0001
+                R = levy_tax(parameters, wealth)
         surplus = R - C_total
+
+        stolen_funds = surplus * (1-parameters['omega'])
+        
+        parameters['stolen_funds'] += stolen_funds
+        
+        surplus -= stolen_funds 
+        
+        # print(surplus)
+        # print()
     
         # print(surplus)
     
         # weight decisions on how to spend surplus
-        weights = determine_surplus_weights(5, 0.1)
+        weights = determine_surplus_weights(4, 0.1)
     
         # assign weights to surplus
         surpluses = assign_surplus_weights(surplus, weights)
@@ -268,6 +308,8 @@ def run_simulation(parameters, n_cycles):
         grow_population(parameters)
         snapshot = copy.deepcopy(parameters)
         history.append(snapshot)
+        parameters['tau'] = 0.01
+
     return history
 
 
