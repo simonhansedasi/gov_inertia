@@ -14,16 +14,16 @@ initial_conditions = {
     'alpha':0.5,
     'beta':0.5,
     'gamma':0.5,
-    'delta':10,
+    'delta':20,
     'mu_0':0,
     'sigma':0.1,
     'tau':0.05,
     'lambda':0.001,
     'psi':0.5,
     'epsilon':10,
-    'zeta':1e-3,
+    'zeta':0.1,
     'eta':0.7,
-    'C_B':3,
+    'C_B':5,
     'omega':0.95,
     'stolen_funds':0,
     'savings':0,
@@ -157,9 +157,9 @@ def expand_government(parameters, surplus):
 
 
 def reduce_enforcement_cost(parameters, surplus):
-    parameters['epsilon'] = max(1e-5, parameters['epsilon'] * np.exp(-0.001 * (surplus/3)))
-    parameters['delta'] = max(1.0, parameters['delta'] - 0.0005 * np.log1p((surplus/3)))
-    parameters['zeta'] = max(0.1, parameters['zeta'] - 0.0005 * np.log1p((surplus/3)))
+    parameters['epsilon'] = (parameters['epsilon'] - (np.exp(-0.00005 * (surplus/3))) / parameters['H'])
+    parameters['delta'] = (parameters['delta'] - (0.00005 * np.log1p((surplus/3))) / parameters['H'])
+    parameters['zeta'] = (parameters['zeta'] - (0.00005 * np.log1p((surplus/3))) / parameters['H'])
     return parameters
 
 
